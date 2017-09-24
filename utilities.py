@@ -10,9 +10,9 @@ from collections import defaultdict
 from nltk.stem.snowball import ItalianStemmer
 from nltk.stem.snowball import EnglishStemmer
 import numpy as np
+import timeit
 
 
-sys.path.insert(0,'/home/domenico/Desktop/WORK/TWITTER/TOKEN/')
 from token_2 import *
 
 OCEAN_LIST = [ch for ch in "OCEAN"]
@@ -143,7 +143,11 @@ def timeline_to_b5(user_id, api, word_dictionary, stemmer, ocean, lang):
 	b5_score = np.zeros((6,), dtype=np.float)
 	try:
 		cur = tweepy.Cursor(api.user_timeline, id = user_id, count = tweets_per_request)
+
+		start_time = timeit.default_timer()
 		timeline = [page for page in cur.pages(max_pages)]
+		end_time = timeit.default_timer()
+		print "Time to fetch tweets: {:0.2f} s".format(end_time - start_time)
 		
 		num_tweets = 0
 		for page in timeline:
@@ -151,20 +155,26 @@ def timeline_to_b5(user_id, api, word_dictionary, stemmer, ocean, lang):
 		if num_tweets <= 10:
 			return b5_score
 		
+		start_time = timeit.default_timer()
 		for page in timeline:
 			for tweet in page:
 				tw = tweet_get_fields(tweet)
 				if tw[0] == lang:
 					b5_score += tweet_to_b5(tw[1], word_dictionary, stemmer, ocean)
-		
+		end_time = timeit.default_timer()
+		print "Time to analyse tweets: {:0.2f} s".format(end_time - start_time)
+
 		del timeline
 	
 	except tweepy.TweepError as err:
-#				if "401" in err.reason:
-		print err.reason
+		print err[0][0]['message']
+		print err[0][0]['code']
 	
-	#				if "[Errno -3]" in err.reason:
-	#					print "Connection error!"
+	
+	
+	
+	
+	
 	
 	return b5_score
 

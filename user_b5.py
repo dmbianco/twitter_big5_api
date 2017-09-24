@@ -3,9 +3,8 @@ import sys
 import os
 import requests
 import codecs
+import timeit
 
-sys.path.insert(0,'/home/domenico/Desktop/WORK/TWITTER/TOKEN/')
-from token_2 import *
 from utilities import *
 
 
@@ -31,11 +30,12 @@ def personalized_score(scores, cuts = [25,75,100]):
 UTF8Writer = codecs.getwriter('utf8')
 sys.stdout = UTF8Writer(sys.stdout)
 
+start_time = timeit.default_timer()
 
 #screen_name = raw_input("Insert a screen name: ")
-screen_name = "mafaldina88"
+#screen_name = "mafaldina88"
 screen_name = "FinallyMario"
-screen_name = "FinallyMariasssdsdasasdads"
+#screen_name = "FinallyMariasssdsdasasdads"
 
 # LOAD DICTIONARIES AND WEIGHTS
 en_stemmer = EnglishStemmer()
@@ -58,23 +58,27 @@ it_quantiles = {}
 load_quantiles(IT_QUANTILES_FILE, it_quantiles)
 
 
-num_tokens = 10
+num_tokens = 1
 api = []
 credentials_creation(num_tokens,api)
-api = api[4]
+api = api[0]
+
+partial_time = timeit.default_timer()
+
+
 
 try:
     user = api.lookup_users(screen_names = [screen_name])[0]
-except tweepy.TweepError, e:
-    print e[0][0]['message']
-    print e[0][0]['code']
+except tweepy.TweepError as err:
+    print err[0][0]['message']
+    print err[0][0]['code']
     print "Aborted."
     sys.exit(1)
 
 user_lang = user.lang
 user_id = user.id_str
 
-if  user_lang == 'it':
+if user_lang == 'it':
     b5_score = timeline_to_b5(user_id, api, it_dictionary, it_stemmer, ocean_weights, user_lang)
 elif user_lang == 'en':
     b5_score = timeline_to_b5(user_id, api, en_dictionary, en_stemmer, ocean_weights, user_lang)
@@ -106,5 +110,6 @@ print "Quantiles: ", b5_score_norm
 
 print "25-50-25 score: ", personalized_score(b5_score_norm)
 
-
-
+end_time = timeit.default_timer()
+print "Loading time: {:0.2f} s".format(partial_time - start_time)
+print "Total execution time: {:0.2f} s".format(end_time - start_time)
