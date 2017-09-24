@@ -10,10 +10,9 @@ from collections import defaultdict
 from nltk.stem.snowball import ItalianStemmer
 from nltk.stem.snowball import EnglishStemmer
 import numpy as np
-import timeit
-
 
 from token_2 import *
+
 
 OCEAN_LIST = [ch for ch in "OCEAN"]
 
@@ -28,13 +27,14 @@ EN_QUANTILES_FILE = "quantiles_en.csv"
 MIN_TOKENS = 70
 DIM_CATEGORIES = 64
 
+requests.packages.urllib3.disable_warnings()
 
+# Regex used for parsing tweets
 rule_mentions = re.compile(r"(?<=^|(?<=[^a-zA-Z0-9-_\.]))@(_?[A-Za-z0-9]+[A-Za-z0-9_]+)")
 rule_hash = re.compile(r"(?<=^|(?<=[^a-zA-Z0-9-_\.]))#([A-Za-z]+[A-Za-z0-9]+)")
 rule_url = re.compile(r"https?\S+")
 rule_numbers = re.compile(r"\d+")
 
-requests.packages.urllib3.disable_warnings()
 
 def credentials_creation(num_tokens,api,dont_check = True):
 	i = 0
@@ -67,6 +67,7 @@ def tweet_get_fields(tweet):
 
 
 class Word:
+    # class used for loading the dictionaries
 	features = {}
 	translation = str()
 	
@@ -76,7 +77,11 @@ class Word:
 		self.not_stemmed=not_stemmed
 
 
-def load_dictionary(liwc_dictionary_file, stemmer, word_dictionary):
+def load_dictionary(liwc_dictionary_file, stemmer):
+	# Given the name of the file with the LIWC dictionary and a stemmer, it returns a 
+    # dictionary whose keys are the words and whose values are objects of class Word, 
+    # i.e. they contain the LIWC features.
+	word_dictionary = defaultdict( np.array )
 	with open(liwc_dictionary_file, "rb") as file_reader:
 		csv_reader=csv.reader(file_reader)
 		i = 0
@@ -84,29 +89,37 @@ def load_dictionary(liwc_dictionary_file, stemmer, word_dictionary):
 			not_stemmed=row[0].decode("utf-8")
 			if sum(np.array(row[2:]).astype(int))>0:
 				word_dictionary[stemmer.stem(not_stemmed.strip())] = Word(not_stemmed, np.array(row[2:], dtype=np.int), row[1])
-	
+	return word_dictionary
 
 
-def load_weights(liwc_weights_file, ocean):
+def load_weights(liwc_weights_file):
+    # Given the file with the weights, it loads them into a numpy matrix
+	ocean_weights = [np.zeros((DIM_CATEGORIES,), dtype=np.int) for x in range(5)]
 	with open(liwc_weights_file, "rb") as file_reader:
 		csv_reader=csv.reader(file_reader, delimiter=",")
 		csv_reader.next()
 		i = 0
 		for row in csv_reader:
-			ocean[i] = (np.array(row[1:], dtype=np.float) )
+			ocean_weights[i] = (np.array(row[1:], dtype=np.float) )
 			i += 1
+	return ocean_weights
 
 
-def load_quantiles(quantiles_file, quantiles):
+def load_quantiles(quantiles_file):
+    # Given the file with the quantiles, it loads them into a dictionary whose keys
+    # are the OCEAN traits and whose keys are the quantiles.
+    quantiles = {}
     with open(quantiles_file, 'rb') as f:
         reader = csv.reader(f)
         reader.next()
         for row in reader:
             quantiles[row[0]] = [ float(x) for x in row[1:] ]
+    return quantiles
 
 
 def tweet_to_b5(text, word_dictionary, stemmer, ocean):
-	
+	# Given a tweet (not a retweet), it computes the b5 score associated to it
+    # and the number of tokens found in it
 	if text[0:4] == "RT @":
 		return np.zeros((6,), dtype=np.float)
 	
@@ -135,19 +148,40 @@ def tweet_to_b5(text, word_dictionary, stemmer, ocean):
 	b5 = np.append(b5,token_found)
 	
 	return b5
-	
 
-def timeline_to_b5(user_id, api, word_dictionary, stemmer, ocean, lang):
+
+def score_to_quantile(score, quant):
+    # Given a score (single number) and a list with quantiles, it returns its correct
+    # quantile.
+    for i,x in enumerate(quant):
+        if x > score:
+            return i
+
+
+def personalized_score(scores, cuts = [25,75,100]):
+    # Given a list of scores and a list with cuts, it returns the bins into which they
+    # fall. For example, considering a single score [30] and the default cuts, the
+    # function returns 1; if it were [80], it would return 2.
+    pers_scores = []
+    cuts.sort()
+    for s in scores:
+        for i,cut in enumerate(cuts):
+            if s <= cut:
+                pers_scores.append(i)
+                break
+    return pers_scores
+
+
+def timeline_to_b5(user_id, quantiles, api, word_dictionary, stemmer, ocean, lang):
+    # Given a user id, a dictionary and a stemmer, it computes the big five scores
+    # of the user after having downloaded her tweets.
 	tweets_per_request = 200
 	max_pages = 30
 	b5_score = np.zeros((6,), dtype=np.float)
 	try:
 		cur = tweepy.Cursor(api.user_timeline, id = user_id, count = tweets_per_request)
 
-		start_time = timeit.default_timer()
 		timeline = [page for page in cur.pages(max_pages)]
-		end_time = timeit.default_timer()
-		print "Time to fetch tweets: {:0.2f} s".format(end_time - start_time)
 		
 		num_tweets = 0
 		for page in timeline:
@@ -155,14 +189,11 @@ def timeline_to_b5(user_id, api, word_dictionary, stemmer, ocean, lang):
 		if num_tweets <= 10:
 			return b5_score
 		
-		start_time = timeit.default_timer()
 		for page in timeline:
 			for tweet in page:
 				tw = tweet_get_fields(tweet)
 				if tw[0] == lang:
 					b5_score += tweet_to_b5(tw[1], word_dictionary, stemmer, ocean)
-		end_time = timeit.default_timer()
-		print "Time to analyse tweets: {:0.2f} s".format(end_time - start_time)
 
 		del timeline
 	
@@ -170,14 +201,27 @@ def timeline_to_b5(user_id, api, word_dictionary, stemmer, ocean, lang):
 		print err[0][0]['message']
 		print err[0][0]['code']
 	
-	
-	
-	
-	
-	
-	
-	return b5_score
+	token_found = b5_score[5]
 
+	b5_raw_score = b5_score[:5] / token_found
 
+	print "Token found: ", token_found
+	if token_found < 40:
+		print "The number of token found is not sufficient to compute the B5 scores."
+	elif token_found < MIN_TOKENS:
+		print "The number of token found is very small. The B5 scores may be inaccurate."
+
+	print "Raw B5 scores: ", b5_raw_score
+
+	b5_score_norm = []
+
+	for i,x in enumerate(OCEAN_LIST):
+		b5_score_norm.append( score_to_quantile(b5_raw_score[i], quantiles[x]) )
+		
+	print "Quantiles: ", b5_score_norm
+
+	print "25-50-25 score: ", personalized_score(b5_score_norm)
+
+	return b5_score_norm
 
 	
