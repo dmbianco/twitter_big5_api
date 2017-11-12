@@ -16,14 +16,6 @@ from token_2 import *
 
 OCEAN_LIST = [ch for ch in "OCEAN"]
 
-LIWC_WEIGHTS_FILE = "IBM_weights_2007.csv"
-
-LIWC_DICTIONARY_FILE_EN = "LIWC_en_2007.csv"
-LIWC_DICTIONARY_FILE_IT = "LIWC_it_2007.csv"
-
-IT_QUANTILES_FILE = "quantiles_it.csv"
-EN_QUANTILES_FILE = "quantiles_en.csv"
-
 MIN_TOKENS = 70
 DIM_CATEGORIES = 64
 
@@ -178,28 +170,23 @@ def timeline_to_b5(user_id, quantiles, api, word_dictionary, stemmer, ocean, lan
 	tweets_per_request = 200
 	max_pages = 30
 	b5_score = np.zeros((6,), dtype=np.float)
-	try:
-		cur = tweepy.Cursor(api.user_timeline, id = user_id, count = tweets_per_request)
+	cur = tweepy.Cursor(api.user_timeline, id = user_id, count = tweets_per_request)
 
-		timeline = [page for page in cur.pages(max_pages)]
-		
-		num_tweets = 0
-		for page in timeline:
-			num_tweets += len(page)
-		if num_tweets <= 10:
-			return b5_score
-		
-		for page in timeline:
-			for tweet in page:
-				tw = tweet_get_fields(tweet)
-				if tw[0] == lang:
-					b5_score += tweet_to_b5(tw[1], word_dictionary, stemmer, ocean)
-
-		del timeline
+	timeline = [page for page in cur.pages(max_pages)]
 	
-	except tweepy.TweepError as err:
-		print err[0][0]['message']
-		print err[0][0]['code']
+	num_tweets = 0
+	for page in timeline:
+		num_tweets += len(page)
+	if num_tweets <= 10:
+		return b5_score
+	
+	for page in timeline:
+		for tweet in page:
+			tw = tweet_get_fields(tweet)
+			if tw[0] == lang:
+				b5_score += tweet_to_b5(tw[1], word_dictionary, stemmer, ocean)
+
+	del timeline
 	
 	token_found = b5_score[5]
 
@@ -213,10 +200,10 @@ def timeline_to_b5(user_id, quantiles, api, word_dictionary, stemmer, ocean, lan
 
 	print "Raw B5 scores: ", b5_raw_score
 
-	b5_score_norm = []
+	b5_score_norm = {}
 
 	for i,x in enumerate(OCEAN_LIST):
-		b5_score_norm.append( score_to_quantile(b5_raw_score[i], quantiles[x]) )
+		b5_score_norm[x] = score_to_quantile(b5_raw_score[i], quantiles[x])
 		
 	print "Quantiles: ", b5_score_norm
 
